@@ -178,10 +178,9 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 	}
 
 	// Extend in 15-minute increments up to desired duration.
-	// Extensions are scheduled at fixed absolute times relative to the trigger time:
-	//   trigger = slot_start - 47h30m (i.e. slot_start - 48h + 30min)
-	//   1st extension at trigger + 20min
-	//   subsequent extensions every 15min after that
+	// Each extension waits until exactly 15 min after the previous one
+	// (matching the horizon advancement rate). On failure, retry up to
+	// 10 times with 5-second gaps before giving up on that extension.
 	totalMinutes := 30
 	desiredMinutes := wish.DurationMinutes
 	extensionCount := 0
@@ -192,13 +191,9 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 	for totalMinutes < desiredMinutes {
 		newEnd := end.Add(15 * time.Minute)
 
-		// Compute the absolute target time for this extension
-		var targetTime time.Time
-		if extensionCount == 0 {
-			targetTime = triggerTime.Add(20 * time.Minute)
-		} else {
-			targetTime = triggerTime.Add(20*time.Minute + time.Duration(extensionCount)*15*time.Minute)
-		}
+		// Wait until trigger + 15min * (extensionCount+1) so extensions are
+		// spaced exactly 15 min apart from the trigger time
+		targetTime := triggerTime.Add(time.Duration(extensionCount+1) * 15 * time.Minute)
 
 		waitDuration := time.Until(targetTime)
 		if waitDuration > 0 {
@@ -220,24 +215,23 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 		}
 		log.Printf("booking %s: re-login successful", id)
 
+		// Attempt extension with retries (up to 10 attempts, 5s apart)
 		log.Printf("booking %s: extending event %d to %s (%d -> %d min)",
 			id, eventID, newEnd.Format("15:04"), totalMinutes, totalMinutes+15)
-		_, err := s.asimut.ExtendBooking(eventID, newEnd)
-		if err != nil {
-			log.Printf("booking %s: extension failed at %d min: %v", id, totalMinutes+15, err)
-			// Retry once after a short wait in case of timing edge case
-			log.Printf("booking %s: retrying extension in 60s", id)
-			time.Sleep(60 * time.Second)
-			if err2 := s.asimut.Login(); err2 != nil {
-				log.Printf("booking %s: retry re-login failed: %v", id, err2)
+		var extErr error
+		for attempt := 1; attempt <= 10; attempt++ {
+			_, extErr = s.asimut.ExtendBooking(eventID, newEnd)
+			if extErr == nil {
 				break
 			}
-			_, err = s.asimut.ExtendBooking(eventID, newEnd)
-			if err != nil {
-				log.Printf("booking %s: extension retry also failed: %v, stopping", id, err)
-				break
+			log.Printf("booking %s: extension attempt %d/10 failed: %v", id, attempt, extErr)
+			if attempt < 10 {
+				time.Sleep(5 * time.Second)
 			}
-			log.Printf("booking %s: extension retry succeeded", id)
+		}
+		if extErr != nil {
+			log.Printf("booking %s: extension to %d min failed after 10 attempts, stopping", id, totalMinutes+15)
+			break
 		}
 		end = newEnd
 		totalMinutes += 15
