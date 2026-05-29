@@ -10,6 +10,7 @@ import (
 	"github.com/philippgehrig/asimuth-automation/backend/config"
 	"github.com/philippgehrig/asimuth-automation/backend/db"
 	"github.com/philippgehrig/asimuth-automation/backend/scheduler"
+	"github.com/philippgehrig/asimuth-automation/backend/sync"
 )
 
 func main() {
@@ -25,6 +26,8 @@ func main() {
 	defer database.Close()
 
 	asimutClient := asimut.NewClient("https://hfm-freiburg.asimut.net", cfg.AsimutEmail, cfg.AsimutPassword)
+
+	sync.StartEventSync(database, asimutClient)
 
 	sched := scheduler.New()
 	sched.Start()
