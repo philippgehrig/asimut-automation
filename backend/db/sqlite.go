@@ -75,6 +75,21 @@ func (d *DB) migrate() error {
 	CREATE TABLE IF NOT EXISTS allowed_rooms (
 		room_id INTEGER PRIMARY KEY
 	);
+
+	CREATE TABLE IF NOT EXISTS asimut_events (
+		event_id    INTEGER PRIMARY KEY,
+		title       TEXT NOT NULL,
+		room_name   TEXT NOT NULL,
+		start_time  TEXT NOT NULL,
+		end_time    TEXT NOT NULL,
+		last_synced TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS rooms_cache (
+		room_id    INTEGER PRIMARY KEY,
+		name       TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
 	`
 
 	if _, err := d.conn.Exec(schema); err != nil {
