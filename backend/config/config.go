@@ -9,6 +9,7 @@ type Config struct {
 	AsimutEmail    string
 	AsimutPassword string
 	AppPassword    string
+	CalendarToken  string
 	DatabasePath   string
 	Port           string
 }
@@ -18,6 +19,7 @@ func Load() (*Config, error) {
 		AsimutEmail:    os.Getenv("ASIMUT_EMAIL"),
 		AsimutPassword: os.Getenv("ASIMUT_PASSWORD"),
 		AppPassword:    os.Getenv("APP_PASSWORD"),
+		CalendarToken:  os.Getenv("CALENDAR_TOKEN"),
 		DatabasePath:   getEnvOrDefault("DATABASE_PATH", "/data/asimut.db"),
 		Port:           getEnvOrDefault("PORT", "8080"),
 	}

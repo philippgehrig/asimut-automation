@@ -7,6 +7,7 @@ services:
       - ASIMUT_EMAIL=${ASIMUT_EMAIL}
       - ASIMUT_PASSWORD=${ASIMUT_PASSWORD}
       - APP_PASSWORD=${APP_PASSWORD}
+      - CALENDAR_TOKEN=${CALENDAR_TOKEN}
       - DATABASE_PATH=/data/asimut.db
     volumes:
       - db_data:/data
