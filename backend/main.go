@@ -32,7 +32,7 @@ func main() {
 	sched := scheduler.New()
 	sched.Start()
 
-	srv := api.NewServer(database, asimutClient, sched, cfg.AppPassword)
+	srv := api.NewServer(database, asimutClient, sched, cfg.AppPassword, cfg.CalendarToken)
 
 	rescheduleExisting(database, srv)
 	go generateRecurrences(database, srv)

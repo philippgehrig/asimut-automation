@@ -13,15 +13,16 @@ import (
 
 // Server holds the dependencies for all HTTP handlers.
 type Server struct {
-	db        *db.DB
-	asimut    *asimut.Client
-	scheduler *scheduler.Scheduler
-	password  string
+	db            *db.DB
+	asimut        *asimut.Client
+	scheduler     *scheduler.Scheduler
+	password      string
+	calendarToken string
 }
 
 // NewServer creates a new Server with all required dependencies.
-func NewServer(database *db.DB, asimutClient *asimut.Client, sched *scheduler.Scheduler, password string) *Server {
-	return &Server{db: database, asimut: asimutClient, scheduler: sched, password: password}
+func NewServer(database *db.DB, asimutClient *asimut.Client, sched *scheduler.Scheduler, password string, calendarToken string) *Server {
+	return &Server{db: database, asimut: asimutClient, scheduler: sched, password: password, calendarToken: calendarToken}
 }
 
 // Router builds and returns the chi router with all API routes.
@@ -29,6 +30,9 @@ func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	// Calendar endpoint — outside auth middleware (token in URL)
+	r.Get("/api/calendar/{token}.ics", s.calendarHandler)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(AuthMiddleware(s.password))
