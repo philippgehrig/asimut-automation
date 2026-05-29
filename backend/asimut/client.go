@@ -413,6 +413,65 @@ func (c *Client) ExtendBooking(eventID int, newEnd time.Time) (*BookingResult, e
 	}, nil
 }
 
+// AsimutEventInfo represents an event fetched from the Asimut calendar.
+type AsimutEventInfo struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	RoomName  string `json:"room_name"`
+	StartTime string `json:"start_time"`
+	EndTime   string `json:"end_time"`
+}
+
+// GetMyEvents fetches the logged-in user's events between from and to.
+func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
+	fromStr := from.Format(timeFormat)
+	toStr := to.Format(timeFormat)
+	path := fmt.Sprintf("/services/v2/events/from=%s;to=%s", fromStr, toStr)
+
+	respBody, err := c.doJSON("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting events: %w", err)
+	}
+
+	response, ok := respBody["response"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected events response format")
+	}
+
+	eventsRaw, ok := response["events"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("no events array in response (keys: %v)", keys(response))
+	}
+
+	var events []AsimutEventInfo
+	for _, er := range eventsRaw {
+		em, ok := er.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		roomName := ""
+		if rs, ok := em["rs"].([]interface{}); ok && len(rs) > 0 {
+			if rm, ok := rs[0].(map[string]interface{}); ok {
+				roomName = stringFromInterface(rm["dn"])
+				if name := stringFromInterface(rm["name"]); name != "" {
+					roomName = name
+				}
+			}
+		}
+
+		events = append(events, AsimutEventInfo{
+			ID:        intFromInterface(em["id"]),
+			Title:     stringFromInterface(em["ar"]),
+			RoomName:  roomName,
+			StartTime: stringFromInterface(em["st"]),
+			EndTime:   stringFromInterface(em["en"]),
+		})
+	}
+
+	return events, nil
+}
+
 // getEventDefault retrieves the default event template for a room.
 func (c *Client) getEventDefault(roomID int, start time.Time) (map[string]interface{}, error) {
 	body := map[string]interface{}{
