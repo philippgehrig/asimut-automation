@@ -426,16 +426,27 @@ type AsimutEventInfo struct {
 func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
 	fromStr := from.Format(timeFormat)
 	toStr := to.Format(timeFormat)
-	path := fmt.Sprintf("/services/v2/events/from=%s;to=%s", fromStr, toStr)
+
+	// Try participant-scoped endpoint first (user ID from heartbeat)
+	var path string
+	if c.userInfo != nil && c.userInfo.ID > 0 {
+		path = fmt.Sprintf("/services/v2/events/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID)
+	} else {
+		path = fmt.Sprintf("/services/v2/events/from=%s;to=%s", fromStr, toStr)
+	}
 
 	respBody, err := c.doJSON("GET", path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting events: %w", err)
 	}
 
+	log.Printf("[asimut] events response keys: %v", keys(respBody))
+
 	response, ok := respBody["response"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("unexpected events response format")
+		// Log the full response for debugging
+		respJSON, _ := json.Marshal(respBody)
+		return nil, fmt.Errorf("unexpected events response format: %s", string(respJSON[:min(500, len(respJSON))]))
 	}
 
 	eventsRaw, ok := response["events"].([]interface{})
@@ -535,6 +546,19 @@ func (c *Client) getHeartbeat() (bool, error) {
 	if !ok {
 		log.Printf("[asimut] heartbeat 'loggedin' not a bool: %v (type %T)", heartbeat["loggedin"], heartbeat["loggedin"])
 		return false, nil
+	}
+
+	if loggedIn {
+		if me, ok := heartbeat["me"].(map[string]interface{}); ok {
+			c.userInfo = &UserInfo{
+				ID:             intFromInterface(me["id"]),
+				Name:           stringFromInterface(me["name"]),
+				Surname:        stringFromInterface(me["surname"]),
+				Username:       stringFromInterface(me["username"]),
+				BookingHorizon: stringFromInterface(me["booking_horizon"]),
+			}
+			log.Printf("[asimut] user info: id=%d, name=%s %s", c.userInfo.ID, c.userInfo.Name, c.userInfo.Surname)
+		}
 	}
 
 	log.Printf("[asimut] heartbeat loggedin=%v", loggedIn)
