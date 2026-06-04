@@ -10,8 +10,13 @@
     </nav>
     <div v-if="bookingsStore.loading" class="text-gray-500">Loading...</div>
     <div v-else class="space-y-2">
-      <BookingCard v-for="booking in bookingsStore.bookings" :key="booking.id" :booking="booking" @delete="bookingsStore.remove($event)" />
+      <BookingCard v-for="booking in paginatedBookings" :key="booking.id" :booking="booking" @delete="bookingsStore.remove($event)" />
       <p v-if="bookingsStore.bookings.length === 0" class="text-gray-500 text-center py-8">No bookings yet</p>
+      <div v-if="totalPages > 1" class="flex justify-center items-center gap-2 pt-2">
+        <button @click="page--" :disabled="page <= 1" class="px-3 py-1 text-sm rounded border disabled:opacity-30">&laquo;</button>
+        <span class="text-sm text-gray-600">{{ page }} / {{ totalPages }}</span>
+        <button @click="page++" :disabled="page >= totalPages" class="px-3 py-1 text-sm rounded border disabled:opacity-30">&raquo;</button>
+      </div>
     </div>
     <div v-if="recurrencesStore.recurrences.length > 0" class="pt-4 border-t">
       <h2 class="text-lg font-semibold mb-2">Recurring</h2>
@@ -32,13 +37,31 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useBookingsStore } from '../stores/bookings'
 import { useRecurrencesStore } from '../stores/recurrences'
 import BookingCard from '../components/BookingCard.vue'
 
 const bookingsStore = useBookingsStore()
 const recurrencesStore = useRecurrencesStore()
+
+const PAGE_SIZE = 10
+const page = ref(1)
+
+const sortedBookings = computed(() =>
+  [...bookingsStore.bookings].sort((a, b) => {
+    const dateA = a.date + a.start_time
+    const dateB = b.date + b.start_time
+    return dateB.localeCompare(dateA)
+  })
+)
+
+const totalPages = computed(() => Math.ceil(sortedBookings.value.length / PAGE_SIZE))
+
+const paginatedBookings = computed(() => {
+  const start = (page.value - 1) * PAGE_SIZE
+  return sortedBookings.value.slice(start, start + PAGE_SIZE)
+})
 
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 function dayName(d: number) { return dayNames[d] }
