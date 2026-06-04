@@ -31,23 +31,25 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// Calendar endpoint — outside auth middleware (token in URL)
-	r.Get("/api/calendar/{token}.ics", s.calendarHandler)
-
 	r.Route("/api", func(r chi.Router) {
-		r.Use(AuthMiddleware(s.password))
-		r.Get("/bookings", s.listBookings)
-		r.Post("/bookings", s.createBooking)
-		r.Delete("/bookings/{id}", s.deleteBooking)
-		r.Get("/recurrences", s.listRecurrences)
-		r.Post("/recurrences", s.createRecurrence)
-		r.Patch("/recurrences/{id}", s.updateRecurrence)
-		r.Delete("/recurrences/{id}", s.deleteRecurrence)
-		r.Get("/rooms", s.listRooms)
-		r.Get("/allowed-rooms", s.getAllowedRooms)
-		r.Put("/allowed-rooms", s.setAllowedRooms)
-		r.Get("/settings/status", s.getStatus)
-		r.Post("/settings/reconnect", s.reconnect)
+		// Calendar endpoint — no auth (token in URL provides authentication)
+		r.Get("/calendar/{token}.ics", s.calendarHandler)
+
+		r.Group(func(r chi.Router) {
+			r.Use(AuthMiddleware(s.password))
+			r.Get("/bookings", s.listBookings)
+			r.Post("/bookings", s.createBooking)
+			r.Delete("/bookings/{id}", s.deleteBooking)
+			r.Get("/recurrences", s.listRecurrences)
+			r.Post("/recurrences", s.createRecurrence)
+			r.Patch("/recurrences/{id}", s.updateRecurrence)
+			r.Delete("/recurrences/{id}", s.deleteRecurrence)
+			r.Get("/rooms", s.listRooms)
+			r.Get("/allowed-rooms", s.getAllowedRooms)
+			r.Put("/allowed-rooms", s.setAllowedRooms)
+			r.Get("/settings/status", s.getStatus)
+			r.Post("/settings/reconnect", s.reconnect)
+		})
 	})
 	return r
 }
