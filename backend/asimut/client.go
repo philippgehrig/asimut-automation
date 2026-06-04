@@ -427,24 +427,47 @@ func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
 	fromStr := from.Format(timeFormat)
 	toStr := to.Format(timeFormat)
 
-	// Try participant-scoped endpoint first (user ID from heartbeat)
-	var path string
+	// Try multiple endpoint patterns — Asimut's API is undocumented
+	candidates := []string{
+		fmt.Sprintf("/services/v2/schedule/from=%s;to=%s", fromStr, toStr),
+	}
 	if c.userInfo != nil && c.userInfo.ID > 0 {
-		path = fmt.Sprintf("/services/v2/events/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID)
-	} else {
-		path = fmt.Sprintf("/services/v2/events/from=%s;to=%s", fromStr, toStr)
+		candidates = append(candidates,
+			fmt.Sprintf("/services/v2/schedule/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID),
+			fmt.Sprintf("/services/v2/participantevents/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID),
+			fmt.Sprintf("/services/v2/agenda/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID),
+		)
 	}
 
-	respBody, err := c.doJSON("GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting events: %w", err)
+	var respBody map[string]interface{}
+	var lastErr error
+	var usedPath string
+
+	for _, path := range candidates {
+		resp, err := c.doJSON("GET", path, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if _, hasMessages := resp["messages"]; hasMessages {
+			respJSON, _ := json.Marshal(resp)
+			log.Printf("[asimut] events endpoint %s failed: %s", path, string(respJSON[:min(200, len(respJSON))]))
+			lastErr = fmt.Errorf("endpoint %s: %s", path, string(respJSON[:min(200, len(respJSON))]))
+			continue
+		}
+		respBody = resp
+		usedPath = path
+		break
 	}
 
-	log.Printf("[asimut] events response keys: %v", keys(respBody))
+	if respBody == nil {
+		return nil, fmt.Errorf("no working events endpoint found, last error: %v", lastErr)
+	}
+
+	log.Printf("[asimut] events endpoint found: %s, response keys: %v", usedPath, keys(respBody))
 
 	response, ok := respBody["response"].(map[string]interface{})
 	if !ok {
-		// Log the full response for debugging
 		respJSON, _ := json.Marshal(respBody)
 		return nil, fmt.Errorf("unexpected events response format: %s", string(respJSON[:min(500, len(respJSON))]))
 	}
