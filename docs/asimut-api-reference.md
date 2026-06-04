@@ -352,6 +352,7 @@ Extracted from the frontend Angular app (`main.*.js`):
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/services/v2/heartbeat/me` | GET | Session check + user info |
+| `/services/v2/agenda/;...` | GET | User's full schedule (all event types) |
 | `/services/v2/locations` | GET | All rooms |
 | `/services/v2/locationgroups` | GET | Room groups |
 | `/services/v2/categories` | GET | Event categories |
