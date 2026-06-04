@@ -8,8 +8,21 @@ import (
 	"github.com/philippgehrig/asimuth-automation/backend/db"
 )
 
-const asimutTimeFormat = "2006-01-02T15:04:05.000-07:00"
 const icalTimeFormat = "20060102T150405"
+
+var asimutTimeFormats = []string{
+	"2006-01-02T15:04:05.000-07:00",
+	"2006-01-02T15:04:05-07:00",
+}
+
+func parseAsimutTime(s string) (time.Time, error) {
+	for _, f := range asimutTimeFormats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse asimut time: %s", s)
+}
 
 func Generate(bookings []db.BookingWish, asimutEvents []db.AsimutEvent, roomsCache map[int]string, loc *time.Location) string {
 	var b strings.Builder
@@ -70,8 +83,8 @@ func writeBookingEvent(b *strings.Builder, bk db.BookingWish, roomsCache map[int
 }
 
 func writeAsimutEvent(b *strings.Builder, ev db.AsimutEvent, loc *time.Location) {
-	start, _ := time.Parse(asimutTimeFormat, ev.StartTime)
-	end, _ := time.Parse(asimutTimeFormat, ev.EndTime)
+	start, _ := parseAsimutTime(ev.StartTime)
+	end, _ := parseAsimutTime(ev.EndTime)
 	if start.IsZero() || end.IsZero() {
 		return
 	}
@@ -118,7 +131,7 @@ func filterDuplicates(asimutEvents []db.AsimutEvent, bookings []db.BookingWish, 
 
 	var filtered []db.AsimutEvent
 	for _, ev := range asimutEvents {
-		t, err := time.Parse(asimutTimeFormat, ev.StartTime)
+		t, err := parseAsimutTime(ev.StartTime)
 		if err != nil {
 			filtered = append(filtered, ev)
 			continue

@@ -425,46 +425,19 @@ type AsimutEventInfo struct {
 // GetMyEvents fetches the logged-in user's events between from and to.
 func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
 	fromStr := from.Format(timeFormat)
-	toStr := to.Format(timeFormat)
 
-	// Try multiple endpoint patterns — Asimut's API is undocumented
-	candidates := []string{
-		fmt.Sprintf("/services/v2/schedule/from=%s;to=%s", fromStr, toStr),
-	}
-	if c.userInfo != nil && c.userInfo.ID > 0 {
-		candidates = append(candidates,
-			fmt.Sprintf("/services/v2/schedule/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID),
-			fmt.Sprintf("/services/v2/participantevents/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID),
-			fmt.Sprintf("/services/v2/agenda/from=%s;to=%s;participant_id=%d", fromStr, toStr, c.userInfo.ID),
-		)
+	path := fmt.Sprintf("/services/v2/search/type=events;load_from=%s;direction=forward;is_participating=true;may_signup=false;limit=100", fromStr)
+
+	body := map[string]interface{}{
+		"search": "Einzelüben",
 	}
 
-	var respBody map[string]interface{}
-	var lastErr error
-	var usedPath string
-
-	for _, path := range candidates {
-		resp, err := c.doJSON("GET", path, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if _, hasMessages := resp["messages"]; hasMessages {
-			respJSON, _ := json.Marshal(resp)
-			log.Printf("[asimut] events endpoint %s failed: %s", path, string(respJSON[:min(200, len(respJSON))]))
-			lastErr = fmt.Errorf("endpoint %s: %s", path, string(respJSON[:min(200, len(respJSON))]))
-			continue
-		}
-		respBody = resp
-		usedPath = path
-		break
+	respBody, err := c.doJSONBody("POST", path, body)
+	if err != nil {
+		return nil, fmt.Errorf("searching events: %w", err)
 	}
 
-	if respBody == nil {
-		return nil, fmt.Errorf("no working events endpoint found, last error: %v", lastErr)
-	}
-
-	log.Printf("[asimut] events endpoint found: %s, response keys: %v", usedPath, keys(respBody))
+	log.Printf("[asimut] events search response keys: %v", keys(respBody))
 
 	response, ok := respBody["response"].(map[string]interface{})
 	if !ok {
@@ -472,37 +445,57 @@ func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
 		return nil, fmt.Errorf("unexpected events response format: %s", string(respJSON[:min(500, len(respJSON))]))
 	}
 
-	eventsRaw, ok := response["events"].([]interface{})
+	eventsMap, ok := response["events"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("no events array in response (keys: %v)", keys(response))
+		return nil, fmt.Errorf("no events map in response (keys: %v)", keys(response))
 	}
 
 	var events []AsimutEventInfo
-	for _, er := range eventsRaw {
-		em, ok := er.(map[string]interface{})
+	for _, dayGroups := range eventsMap {
+		groups, ok := dayGroups.([]interface{})
 		if !ok {
 			continue
 		}
-
-		roomName := ""
-		if rs, ok := em["rs"].([]interface{}); ok && len(rs) > 0 {
-			if rm, ok := rs[0].(map[string]interface{}); ok {
-				roomName = stringFromInterface(rm["dn"])
-				if name := stringFromInterface(rm["name"]); name != "" {
-					roomName = name
+		for _, g := range groups {
+			group, ok := g.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			eventsRaw, ok := group["events"].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, er := range eventsRaw {
+				em, ok := er.(map[string]interface{})
+				if !ok {
+					continue
 				}
+
+				roomName := ""
+				if rs, ok := em["rs"].([]interface{}); ok && len(rs) > 0 {
+					if rm, ok := rs[0].(map[string]interface{}); ok {
+						roomName = stringFromInterface(rm["dn"])
+						if name := stringFromInterface(rm["name"]); name != "" {
+							roomName = name
+						}
+						if idx := strings.Index(roomName, " ("); idx > 0 {
+							roomName = roomName[:idx]
+						}
+					}
+				}
+
+				events = append(events, AsimutEventInfo{
+					ID:        intFromInterface(em["id"]),
+					Title:     stringFromInterface(em["ar"]),
+					RoomName:  roomName,
+					StartTime: stringFromInterface(em["st"]),
+					EndTime:   stringFromInterface(em["en"]),
+				})
 			}
 		}
-
-		events = append(events, AsimutEventInfo{
-			ID:        intFromInterface(em["id"]),
-			Title:     stringFromInterface(em["ar"]),
-			RoomName:  roomName,
-			StartTime: stringFromInterface(em["st"]),
-			EndTime:   stringFromInterface(em["en"]),
-		})
 	}
 
+	log.Printf("[asimut] parsed %d events from search", len(events))
 	return events, nil
 }
 
