@@ -12,6 +12,7 @@ export interface BookingWish {
   status: string
   result_room?: string
   result_duration?: number
+  result_event_id?: number
   failure_reason?: string
   created_at: string
   updated_at: string

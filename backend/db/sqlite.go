@@ -66,6 +66,7 @@ func (d *DB) migrate() error {
 		status TEXT DEFAULT 'pending',
 		result_room TEXT,
 		result_duration INTEGER,
+		result_event_id INTEGER,
 		failure_reason TEXT,
 		created_at TEXT DEFAULT (datetime('now')),
 		updated_at TEXT DEFAULT (datetime('now')),
@@ -95,5 +96,9 @@ func (d *DB) migrate() error {
 	if _, err := d.conn.Exec(schema); err != nil {
 		return fmt.Errorf("exec schema: %w", err)
 	}
+
+	// Add result_event_id column if it doesn't exist (migration for existing DBs)
+	d.conn.Exec(`ALTER TABLE booking_wishes ADD COLUMN result_event_id INTEGER`)
+
 	return nil
 }

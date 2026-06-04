@@ -89,18 +89,18 @@ func (s *Server) ScheduleBookingJob(id string, wish db.BookingWish) {
 	trigger, err := scheduler.CalculateTriggerTime(wish.Date, wish.StartTime, loc)
 	if err != nil {
 		log.Printf("failed to calculate trigger time for booking %s: %v", id, err)
-		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, fmt.Sprintf("invalid schedule: %v", err))
+		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, fmt.Sprintf("invalid schedule: %v", err))
 		return
 	}
 
 	if trigger.Before(time.Now()) {
 		// Trigger time already passed — execute immediately instead of failing
-		_ = s.db.UpdateBookingStatus(id, "executing", "", nil, "")
+		_ = s.db.UpdateBookingStatus(id, "executing", "", nil, nil, "")
 		go s.executeBooking(id, wish)
 		return
 	}
 
-	_ = s.db.UpdateBookingStatus(id, "scheduled", "", nil, "")
+	_ = s.db.UpdateBookingStatus(id, "scheduled", "", nil, nil, "")
 
 	s.scheduler.Schedule(&scheduler.Job{
 		ID:          id,
@@ -118,26 +118,26 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 
 	if err := s.asimut.Login(); err != nil {
 		log.Printf("booking %s: login failed: %v", id, err)
-		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, fmt.Sprintf("login failed: %v", err))
+		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, fmt.Sprintf("login failed: %v", err))
 		return
 	}
 	log.Printf("booking %s: login successful", id)
 
 	loc, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {
-		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, fmt.Sprintf("timezone error: %v", err))
+		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, fmt.Sprintf("timezone error: %v", err))
 		return
 	}
 
 	slotDate, err := time.ParseInLocation("2006-01-02", wish.Date, loc)
 	if err != nil {
-		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, fmt.Sprintf("invalid date: %v", err))
+		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, fmt.Sprintf("invalid date: %v", err))
 		return
 	}
 
 	hm, err := scheduler.ParseTime(wish.StartTime)
 	if err != nil {
-		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, fmt.Sprintf("invalid start time: %v", err))
+		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, fmt.Sprintf("invalid start time: %v", err))
 		return
 	}
 
@@ -173,7 +173,7 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 			reason = fmt.Sprintf("no room available: %v", lastErr)
 		}
 		log.Printf("booking %s: === FAILED === %s", id, reason)
-		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, reason)
+		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, reason)
 		return
 	}
 
@@ -248,7 +248,7 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 	}
 
 	resultDuration := totalMinutes
-	_ = s.db.UpdateBookingStatus(id, status, bookedRoom, &resultDuration, "")
+	_ = s.db.UpdateBookingStatus(id, status, bookedRoom, &resultDuration, &eventID, "")
 }
 
 func (s *Server) resolveRoomName(roomID int) string {

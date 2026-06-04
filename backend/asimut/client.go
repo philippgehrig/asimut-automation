@@ -413,6 +413,46 @@ func (c *Client) ExtendBooking(eventID int, newEnd time.Time) (*BookingResult, e
 	}, nil
 }
 
+// GetEvent fetches a single event by ID and returns its info.
+func (c *Client) GetEvent(eventID int) (*AsimutEventInfo, error) {
+	path := fmt.Sprintf("/services/v2/event/event_id=%d", eventID)
+	respBody, err := c.doJSON("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting event %d: %w", eventID, err)
+	}
+
+	response, ok := respBody["response"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected event response format")
+	}
+
+	event, ok := response["event"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("event %d not found", eventID)
+	}
+
+	roomName := ""
+	if rs, ok := event["rs"].([]interface{}); ok && len(rs) > 0 {
+		if rm, ok := rs[0].(map[string]interface{}); ok {
+			roomName = stringFromInterface(rm["dn"])
+			if name := stringFromInterface(rm["name"]); name != "" {
+				roomName = name
+			}
+			if idx := strings.Index(roomName, " ("); idx > 0 {
+				roomName = roomName[:idx]
+			}
+		}
+	}
+
+	return &AsimutEventInfo{
+		ID:        intFromInterface(event["id"]),
+		Title:     stringFromInterface(event["ar"]),
+		RoomName:  roomName,
+		StartTime: stringFromInterface(event["st"]),
+		EndTime:   stringFromInterface(event["en"]),
+	}, nil
+}
+
 // AsimutEventInfo represents an event fetched from the Asimut calendar.
 type AsimutEventInfo struct {
 	ID        int    `json:"id"`

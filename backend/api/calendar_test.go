@@ -41,7 +41,7 @@ func TestCalendarEndpoint_ValidToken(t *testing.T) {
 		t.Fatalf("failed to create booking: %v", err)
 	}
 
-	err = database.UpdateBookingStatus(id, "booked", "MBP-326", nil, "")
+	err = database.UpdateBookingStatus(id, "booked", "MBP-326", nil, nil, "")
 	if err != nil {
 		t.Fatalf("failed to update booking status: %v", err)
 	}

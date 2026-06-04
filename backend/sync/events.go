@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -12,6 +13,7 @@ func StartEventSync(database *db.DB, client *asimut.Client) {
 	go func() {
 		for {
 			syncEvents(database, client)
+			detectMovedBookings(database, client)
 			syncRooms(database, client)
 			time.Sleep(1 * time.Hour)
 		}
@@ -59,6 +61,61 @@ func syncEvents(database *db.DB, client *asimut.Client) {
 	}
 
 	log.Printf("[sync] synced %d events from Asimut", len(events))
+}
+
+func detectMovedBookings(database *db.DB, client *asimut.Client) {
+	bookings, err := database.ListBookings()
+	if err != nil {
+		log.Printf("[sync] failed to list bookings for move detection: %v", err)
+		return
+	}
+
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		return
+	}
+	now := time.Now().In(loc)
+
+	moved := 0
+	for _, bk := range bookings {
+		if bk.Status != "booked" && bk.Status != "partially_booked" {
+			continue
+		}
+		if bk.ResultEventID == nil {
+			continue
+		}
+
+		// Only check bookings that haven't passed yet
+		bookingDate, err := time.ParseInLocation("2006-01-02", bk.Date, loc)
+		if err != nil {
+			continue
+		}
+		if bookingDate.Before(now.Truncate(24 * time.Hour)) {
+			continue
+		}
+
+		// Fetch the event from Asimut and check if it still matches
+		event, err := client.GetEvent(*bk.ResultEventID)
+		if err != nil {
+			log.Printf("[sync] event %d not found (booking %s), marking as moved: %v", *bk.ResultEventID, bk.ID, err)
+			_ = database.UpdateBookingStatus(bk.ID, "moved", bk.ResultRoom, bk.ResultDuration, bk.ResultEventID,
+				fmt.Sprintf("Booking was modified or cancelled on Asimut"))
+			moved++
+			continue
+		}
+
+		// Check if room or time changed
+		if event.RoomName != "" && event.RoomName != bk.ResultRoom {
+			log.Printf("[sync] booking %s: room changed from %s to %s", bk.ID, bk.ResultRoom, event.RoomName)
+			_ = database.UpdateBookingStatus(bk.ID, "moved", bk.ResultRoom, bk.ResultDuration, bk.ResultEventID,
+				fmt.Sprintf("Room changed to %s on Asimut", event.RoomName))
+			moved++
+		}
+	}
+
+	if moved > 0 {
+		log.Printf("[sync] detected %d moved/modified bookings", moved)
+	}
 }
 
 func syncRooms(database *db.DB, client *asimut.Client) {

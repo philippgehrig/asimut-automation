@@ -19,6 +19,7 @@ type BookingWish struct {
 	Status          string `json:"status"`
 	ResultRoom      string `json:"result_room,omitempty"`
 	ResultDuration  *int   `json:"result_duration,omitempty"`
+	ResultEventID   *int   `json:"result_event_id,omitempty"`
 	FailureReason   string `json:"failure_reason,omitempty"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
@@ -50,7 +51,7 @@ func (d *DB) CreateBooking(wish BookingWish) (string, error) {
 func (d *DB) ListBookings() ([]BookingWish, error) {
 	rows, err := d.conn.Query(`
 		SELECT id, date, start_time, duration_minutes, room_priorities, recurrence_id,
-		       status, result_room, result_duration, failure_reason, created_at, updated_at
+		       status, result_room, result_duration, result_event_id, failure_reason, created_at, updated_at
 		FROM booking_wishes
 		ORDER BY date, start_time`)
 	if err != nil {
@@ -65,7 +66,7 @@ func (d *DB) ListBookings() ([]BookingWish, error) {
 func (d *DB) GetPendingBookings() ([]BookingWish, error) {
 	rows, err := d.conn.Query(`
 		SELECT id, date, start_time, duration_minutes, room_priorities, recurrence_id,
-		       status, result_room, result_duration, failure_reason, created_at, updated_at
+		       status, result_room, result_duration, result_event_id, failure_reason, created_at, updated_at
 		FROM booking_wishes
 		WHERE status IN ('pending', 'scheduled')
 		ORDER BY date, start_time`)
@@ -78,12 +79,12 @@ func (d *DB) GetPendingBookings() ([]BookingWish, error) {
 }
 
 // UpdateBookingStatus updates the status and result fields of a booking.
-func (d *DB) UpdateBookingStatus(id, status, resultRoom string, resultDuration *int, failureReason string) error {
+func (d *DB) UpdateBookingStatus(id, status, resultRoom string, resultDuration *int, resultEventID *int, failureReason string) error {
 	_, err := d.conn.Exec(`
 		UPDATE booking_wishes
-		SET status = ?, result_room = ?, result_duration = ?, failure_reason = ?, updated_at = datetime('now')
+		SET status = ?, result_room = ?, result_duration = ?, result_event_id = ?, failure_reason = ?, updated_at = datetime('now')
 		WHERE id = ?`,
-		status, nullableString(resultRoom), resultDuration, nullableString(failureReason), id,
+		status, nullableString(resultRoom), resultDuration, resultEventID, nullableString(failureReason), id,
 	)
 	if err != nil {
 		return fmt.Errorf("update booking status: %w", err)
@@ -104,7 +105,7 @@ func (d *DB) DeleteBooking(id string) error {
 func (d *DB) GetBookingByRecurrenceAndDate(recurrenceID, date string) (*BookingWish, error) {
 	row := d.conn.QueryRow(`
 		SELECT id, date, start_time, duration_minutes, room_priorities, recurrence_id,
-		       status, result_room, result_duration, failure_reason, created_at, updated_at
+		       status, result_room, result_duration, result_event_id, failure_reason, created_at, updated_at
 		FROM booking_wishes
 		WHERE recurrence_id = ? AND date = ?`,
 		recurrenceID, date,
@@ -129,11 +130,12 @@ func scanBookings(rows *sql.Rows) ([]BookingWish, error) {
 		var recurrenceID sql.NullString
 		var resultRoom sql.NullString
 		var resultDuration sql.NullInt64
+		var resultEventID sql.NullInt64
 		var failureReason sql.NullString
 
 		err := rows.Scan(
 			&b.ID, &b.Date, &b.StartTime, &b.DurationMinutes, &priorities,
-			&recurrenceID, &b.Status, &resultRoom, &resultDuration, &failureReason,
+			&recurrenceID, &b.Status, &resultRoom, &resultDuration, &resultEventID, &failureReason,
 			&b.CreatedAt, &b.UpdatedAt,
 		)
 		if err != nil {
@@ -150,6 +152,10 @@ func scanBookings(rows *sql.Rows) ([]BookingWish, error) {
 			dur := int(resultDuration.Int64)
 			b.ResultDuration = &dur
 		}
+		if resultEventID.Valid {
+			eid := int(resultEventID.Int64)
+			b.ResultEventID = &eid
+		}
 		b.FailureReason = failureReason.String
 
 		bookings = append(bookings, b)
@@ -164,11 +170,12 @@ func scanBooking(row *sql.Row) (*BookingWish, error) {
 	var recurrenceID sql.NullString
 	var resultRoom sql.NullString
 	var resultDuration sql.NullInt64
+	var resultEventID sql.NullInt64
 	var failureReason sql.NullString
 
 	err := row.Scan(
 		&b.ID, &b.Date, &b.StartTime, &b.DurationMinutes, &priorities,
-		&recurrenceID, &b.Status, &resultRoom, &resultDuration, &failureReason,
+		&recurrenceID, &b.Status, &resultRoom, &resultDuration, &resultEventID, &failureReason,
 		&b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
@@ -184,6 +191,10 @@ func scanBooking(row *sql.Row) (*BookingWish, error) {
 	if resultDuration.Valid {
 		dur := int(resultDuration.Int64)
 		b.ResultDuration = &dur
+	}
+	if resultEventID.Valid {
+		eid := int(resultEventID.Int64)
+		b.ResultEventID = &eid
 	}
 	b.FailureReason = failureReason.String
 

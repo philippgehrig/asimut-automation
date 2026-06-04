@@ -112,7 +112,7 @@ func TestCreateAndListBookings(t *testing.T) {
 
 	// Update status of first booking.
 	dur := 60
-	err = d.UpdateBookingStatus(id1, "confirmed", "Room A", &dur, "")
+	err = d.UpdateBookingStatus(id1, "confirmed", "Room A", &dur, nil, "")
 	if err != nil {
 		t.Fatalf("update booking status: %v", err)
 	}

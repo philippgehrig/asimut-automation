@@ -5,7 +5,8 @@
         <p class="font-medium">{{ booking.date }} at {{ booking.start_time }}</p>
         <p class="text-sm text-gray-500">{{ booking.duration_minutes }} min</p>
         <p v-if="booking.result_room" class="text-sm text-green-600">Room: {{ booking.result_room }}</p>
-        <p v-if="booking.failure_reason" class="text-sm text-red-500">{{ booking.failure_reason }}</p>
+        <p v-if="booking.status === 'moved'" class="text-sm text-orange-600">⚠️ {{ booking.failure_reason || 'Booking was modified on Asimut' }}</p>
+        <p v-else-if="booking.failure_reason" class="text-sm text-red-500">{{ booking.failure_reason }}</p>
       </div>
       <div class="flex items-center gap-2">
         <StatusBadge :status="booking.status" />

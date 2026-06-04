@@ -163,6 +163,8 @@ func statusEmoji(status string) string {
 	switch status {
 	case "booked", "partially_booked":
 		return "✅"
+	case "moved":
+		return "⚠️"
 	case "failed":
 		return "❌"
 	default:
@@ -182,6 +184,11 @@ func statusDescription(bk db.BookingWish) string {
 			return fmt.Sprintf("Partially booked: %d/%d minutes", *bk.ResultDuration, bk.DurationMinutes)
 		}
 		return "Partially booked"
+	case "moved":
+		if bk.FailureReason != "" {
+			return "Modified: " + bk.FailureReason
+		}
+		return "Booking was modified or cancelled on Asimut"
 	case "failed":
 		if bk.FailureReason != "" {
 			return "Failed: " + bk.FailureReason
