@@ -129,11 +129,66 @@ Event field key:
 
 ---
 
-### Search Events (User's Bookings)
+### Agenda (User's Full Schedule) — PREFERRED
+
+**GET** `/services/v2/agenda/;category_ids=;custom_id=0;direction=forward;event_limit=<n>;interval_limit=P30D;location_ids=;person_id=<user_id>;request_config_id=0;start_at=<ISO>/fuzzy`
+
+This is the **best way** to fetch a user's complete schedule including all event types (practice bookings, ensemble rehearsals, seminars, etc.). Note the leading semicolon after `agenda/`.
+
+Path parameters (semicolon-separated, note leading `;`):
+- `person_id` — User ID (from heartbeat `me.id`)
+- `start_at` — ISO 8601 timestamp followed by `/fuzzy`
+- `direction` — `"forward"` or `"backward"`
+- `event_limit` — Max events to return (e.g., `100`)
+- `interval_limit` — ISO 8601 duration (e.g., `P30D` for 30 days)
+- `category_ids` — Empty for all categories
+- `location_ids` — Empty for all locations
+
+Response:
+```json
+{
+  "response": {
+    "agenda": {
+      "2026-06-15T00:00:00+02:00": [
+        {
+          "dateHeader": "Mi, 4. Juni 2026",
+          "events": [
+            {
+              "id": 487960,
+              "ar": "Einzelüben",
+              "st": "2026-06-04T15:00:00+02:00",
+              "en": "2026-06-04T18:00:00+02:00",
+              "rs": [{"id": 52, "dn": "MBP-101 (Seminar, Hauptgebäude, 56 m²)"}]
+            },
+            {
+              "id": 488001,
+              "ar": "Brahms' musikalische Welten",
+              "st": "2026-06-16T14:00:00+02:00",
+              "en": "2026-06-16T16:00:00+02:00",
+              "rs": [{"id": 138, "dn": "EXT-Uni-FR, Hörsaal 1119, KG I"}]
+            }
+          ]
+        }
+      ]
+    },
+    "pagination": {
+      "start_at": "2026-06-04T00:00:00+02:00",
+      "end_at": "2026-07-03T23:59:59+02:00"
+    },
+    "success": true
+  }
+}
+```
+
+Structure: `agenda` is a **map** keyed by date ISO strings (grouped roughly by month). Each date contains an array of day-groups with `dateHeader` and `events`.
+
+---
+
+### Search Events (Filtered by Title)
 
 **POST** `/services/v2/search/type=events;load_from=<ISO>;direction=<dir>;is_participating=<bool>;may_signup=<bool>;limit=<n>`
 
-This is the **only working way** to fetch a user's events. There is no dedicated "list my events" endpoint.
+Alternative to the agenda endpoint when you need to filter by event title. The search body **cannot be empty**.
 
 Path parameters (semicolon-separated):
 - `load_from` — ISO 8601 timestamp (e.g., `2026-06-04T00:00:00.000+02:00`)

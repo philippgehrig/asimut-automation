@@ -464,34 +464,32 @@ type AsimutEventInfo struct {
 
 // GetMyEvents fetches the logged-in user's events between from and to.
 func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
+	if c.userInfo == nil || c.userInfo.ID == 0 {
+		return nil, fmt.Errorf("user info not available, cannot fetch agenda")
+	}
+
 	fromStr := from.Format(timeFormat)
+	path := fmt.Sprintf("/services/v2/agenda/;category_ids=;custom_id=0;direction=forward;event_limit=100;interval_limit=P30D;location_ids=;person_id=%d;request_config_id=0;start_at=%s/fuzzy",
+		c.userInfo.ID, fromStr)
 
-	path := fmt.Sprintf("/services/v2/search/type=events;load_from=%s;direction=forward;is_participating=true;may_signup=false;limit=100", fromStr)
-
-	body := map[string]interface{}{
-		"search": "Einzelüben",
-	}
-
-	respBody, err := c.doJSONBody("POST", path, body)
+	respBody, err := c.doJSON("GET", path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("searching events: %w", err)
+		return nil, fmt.Errorf("fetching agenda: %w", err)
 	}
-
-	log.Printf("[asimut] events search response keys: %v", keys(respBody))
 
 	response, ok := respBody["response"].(map[string]interface{})
 	if !ok {
 		respJSON, _ := json.Marshal(respBody)
-		return nil, fmt.Errorf("unexpected events response format: %s", string(respJSON[:min(500, len(respJSON))]))
+		return nil, fmt.Errorf("unexpected agenda response format: %s", string(respJSON[:min(500, len(respJSON))]))
 	}
 
-	eventsMap, ok := response["events"].(map[string]interface{})
+	agendaMap, ok := response["agenda"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("no events map in response (keys: %v)", keys(response))
+		return nil, fmt.Errorf("no agenda map in response (keys: %v)", keys(response))
 	}
 
 	var events []AsimutEventInfo
-	for _, dayGroups := range eventsMap {
+	for _, dayGroups := range agendaMap {
 		groups, ok := dayGroups.([]interface{})
 		if !ok {
 			continue
@@ -535,7 +533,7 @@ func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
 		}
 	}
 
-	log.Printf("[asimut] parsed %d events from search", len(events))
+	log.Printf("[asimut] parsed %d events from agenda", len(events))
 	return events, nil
 }
 
