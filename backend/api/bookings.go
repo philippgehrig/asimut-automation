@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -191,9 +192,11 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 	for totalMinutes < desiredMinutes {
 		newEnd := end.Add(15 * time.Minute)
 
-		// Wait until trigger + 15min * (extensionCount+1) so extensions are
-		// spaced exactly 15 min apart from the trigger time
+		// Wait until trigger + 15min * (extensionCount+1) plus a random jitter
+		// of 0–14 minutes to avoid looking like a bot (the priority window is 15-29min)
 		targetTime := triggerTime.Add(time.Duration(extensionCount+1) * 15 * time.Minute)
+		jitter := time.Duration(rand.Intn(14*60)) * time.Second
+		targetTime = targetTime.Add(jitter)
 
 		waitDuration := time.Until(targetTime)
 		if waitDuration > 0 {
