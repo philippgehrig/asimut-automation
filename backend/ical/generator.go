@@ -91,16 +91,16 @@ func writeAsimutEvent(b *strings.Builder, ev db.AsimutEvent, loc *time.Location)
 	start = start.In(loc)
 	end = end.In(loc)
 
-	summary := ev.RoomName
-	if ev.Title != "" {
-		summary = ev.Title + " — " + ev.RoomName
+	summary := ev.Title
+	if summary == "" {
+		summary = ev.RoomName
 	}
 
 	b.WriteString("BEGIN:VEVENT\r\n")
 	fmt.Fprintf(b, "UID:asimut-%d@asimut-automation\r\n", ev.EventID)
 	fmt.Fprintf(b, "DTSTART;TZID=Europe/Berlin:%s\r\n", start.Format(icalTimeFormat))
 	fmt.Fprintf(b, "DTEND;TZID=Europe/Berlin:%s\r\n", end.Format(icalTimeFormat))
-	fmt.Fprintf(b, "SUMMARY:📅 %s\r\n", summary)
+	fmt.Fprintf(b, "SUMMARY:📌 %s\r\n", summary)
 	if ev.RoomName != "" {
 		fmt.Fprintf(b, "LOCATION:%s\r\n", ev.RoomName)
 	}

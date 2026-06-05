@@ -84,7 +84,7 @@ func TestGenerateCalendar_ManualEvents(t *testing.T) {
 
 	result := Generate(nil, events, nil, loc)
 
-	if !strings.Contains(result, "SUMMARY:📅 Einzelüben — MBP-110") {
+	if !strings.Contains(result, "SUMMARY:📌 Einzelüben") {
 		t.Errorf("missing manual event summary, got:\n%s", result)
 	}
 	if !strings.Contains(result, "UID:asimut-12345@asimut-automation") {
