@@ -3,6 +3,7 @@ package sync
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/philippgehrig/asimuth-automation/backend/asimut"
@@ -12,10 +13,25 @@ import (
 func StartEventSync(database *db.DB, client *asimut.Client) {
 	go func() {
 		for {
-			syncEvents(database, client)
-			detectMovedBookings(database, client)
-			syncRooms(database, client)
-			time.Sleep(1 * time.Hour)
+			loc, _ := time.LoadLocation("Europe/Berlin")
+			now := time.Now().In(loc)
+			hour := now.Hour()
+
+			if hour >= 7 && hour < 22 {
+				jitter := time.Duration(rand.Intn(60)) * time.Minute
+				log.Printf("[sync] starting sync cycle (jitter: %v)", jitter)
+				time.Sleep(jitter)
+
+				syncEvents(database, client)
+				detectMovedBookings(database, client)
+				syncRooms(database, client)
+			} else {
+				log.Printf("[sync] outside active hours (7:00–22:00), skipping")
+			}
+
+			// Sleep until the next full hour
+			next := now.Truncate(time.Hour).Add(time.Hour)
+			time.Sleep(time.Until(next))
 		}
 	}()
 }
