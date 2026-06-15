@@ -40,6 +40,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/bookings", s.listBookings)
 			r.Post("/bookings", s.createBooking)
 			r.Delete("/bookings/{id}", s.deleteBooking)
+			r.Get("/bookings/{id}/log", s.getBookingLog)
 			r.Get("/recurrences", s.listRecurrences)
 			r.Post("/recurrences", s.createRecurrence)
 			r.Patch("/recurrences/{id}", s.updateRecurrence)

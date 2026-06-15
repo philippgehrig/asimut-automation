@@ -100,5 +100,22 @@ func (d *DB) migrate() error {
 	// Add result_event_id column if it doesn't exist (migration for existing DBs)
 	d.conn.Exec(`ALTER TABLE booking_wishes ADD COLUMN result_event_id INTEGER`)
 
+	// Execution log table for detailed booking traces
+	const execLogSchema = `
+	CREATE TABLE IF NOT EXISTS booking_exec_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		booking_id TEXT NOT NULL,
+		timestamp TEXT DEFAULT (datetime('now')),
+		step TEXT NOT NULL,
+		message TEXT NOT NULL,
+		detail TEXT,
+		FOREIGN KEY (booking_id) REFERENCES booking_wishes(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_exec_log_booking ON booking_exec_log(booking_id);
+	`
+	if _, err := d.conn.Exec(execLogSchema); err != nil {
+		return fmt.Errorf("exec log schema: %w", err)
+	}
+
 	return nil
 }
