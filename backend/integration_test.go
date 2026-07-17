@@ -29,12 +29,10 @@ func TestFullBookingFlow(t *testing.T) {
 			http.SetCookie(w, &http.Cookie{Name: "PHPSESSID", Value: "test"})
 			w.Header().Set("Location", "/public/hfm-freiburg.asimut.net")
 			w.WriteHeader(302)
-		case r.URL.Path == "/services/v2/heartbeat/me":
-			w.Write([]byte(`{"response":{"heartbeat":{"loggedin":true},"success":true}}`))
 		case r.URL.Path == "/services/v2/locations":
 			w.Write([]byte(`{"response":{"locations":[{"id":114,"name":"MBP-326","secondary_name":"Test Room","bookable":true,"type":"location"}]}}`))
 		case r.URL.Path == "/services/v2/eventdefault":
-			w.Write([]byte(fmt.Sprintf(`{"response":{"eventdefault":{"events":[{"id":0,"ar":"Einzelüben","ca":1,"st":"%sT14:30:00+02:00","en":"%sT15:00:00+02:00","rs":[{"id":114,"dn":"MBP-326"}],"pe":[{"id":1,"ro":1,"dn":"Test"}],"ps":[{"me":false,"ri":1,"rs":"T","rh":"T","rc":1,"bo":[{"id":1,"fn":"T","ln":"U","un":"t"}]}],"ri":{"e":true},"vi":"visible","cl":[]}]}}}`, futureDate, futureDate)))
+			w.Write([]byte(fmt.Sprintf(`{"response":{"eventdefault":{"events":[{"id":0,"ar":"Einzelüben","ca":1,"st":"%sT14:30:00+02:00","en":"%sT15:00:00+02:00","rs":[{"id":114,"dn":"MBP-326"}],"pe":[{"id":965,"ro":1,"dn":"Teiln: Test User ([BM]Ob956)"}],"ps":[{"me":false,"ri":1,"rs":"T","rh":"T","rc":1,"bo":[{"id":965,"fn":"Test","ln":"User","un":"t"}]}],"ri":{"e":true},"vi":"visible","cl":[]}]},"success":true}}`, futureDate, futureDate)))
 		case r.URL.Path == "/services/v2/event/type=check":
 			w.Write([]byte(`{"response":{"success":true,"event_ids":[0]}}`))
 		case r.URL.Path == "/services/v2/event/type=save":
@@ -57,7 +55,7 @@ func TestFullBookingFlow(t *testing.T) {
 	sched.Start()
 	defer sched.Stop()
 
-	srv := api.NewServer(database, asimutClient, sched, "testpass")
+	srv := api.NewServer(database, asimutClient, sched, "testpass", "testcaltoken")
 	router := srv.Router()
 
 	// 3. Create a booking via API

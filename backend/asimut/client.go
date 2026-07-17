@@ -18,11 +18,10 @@ const timeFormat = "2006-01-02T15:04:05.000-07:00"
 
 // UserInfo holds user account information from Asimut.
 type UserInfo struct {
-	ID             int    `json:"id"`
-	Name           string `json:"name"`
-	Surname        string `json:"surname"`
-	Username       string `json:"username"`
-	BookingHorizon string `json:"booking_horizon"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Surname  string `json:"surname"`
+	Username string `json:"username"`
 }
 
 // Location represents a bookable location in Asimut.
@@ -97,7 +96,7 @@ func (c *Client) resetCookieJar() {
 	c.httpClient.Jar = jar
 }
 
-// doLogin performs the actual login POST and heartbeat verification.
+// doLogin performs the actual login POST and session verification.
 func (c *Client) doLogin() error {
 	// Always start with a fresh cookie jar to avoid stale PHPSESSID
 	c.resetCookieJar()
@@ -147,13 +146,9 @@ func (c *Client) doLogin() error {
 		}
 	}
 
-	// Verify login by checking heartbeat
-	loggedIn, err := c.getHeartbeat()
-	if err != nil {
+	// Verify login by fetching user info from eventdefault
+	if err := c.fetchUserInfo(); err != nil {
 		return fmt.Errorf("verifying login: %w", err)
-	}
-	if !loggedIn {
-		return fmt.Errorf("login failed: invalid credentials")
 	}
 
 	return nil
@@ -575,48 +570,96 @@ func (c *Client) getEventDefault(roomID int, start time.Time) (map[string]interf
 	return event, nil
 }
 
-// getHeartbeat checks if the session is still authenticated.
-func (c *Client) getHeartbeat() (bool, error) {
-	respBody, err := c.doJSON("GET", "/services/v2/heartbeat/me", nil)
-	if err != nil {
-		log.Printf("[asimut] heartbeat error: %v", err)
-		return false, fmt.Errorf("getting heartbeat: %w", err)
+// fetchUserInfo verifies the session is authenticated by calling the eventdefault
+// endpoint and extracting user info from the participants in the response.
+func (c *Client) fetchUserInfo() error {
+	now := time.Now().Format(timeFormat)
+	body := map[string]interface{}{
+		"st": now,
+		"ca": 1,
+		"rs": []map[string]interface{}{
+			{"id": 1},
+		},
 	}
 
-	log.Printf("[asimut] heartbeat raw response: %v", respBody)
+	respBody, err := c.doJSONBody("POST", "/services/v2/eventdefault", body)
+	if err != nil {
+		return fmt.Errorf("fetching user info: %w", err)
+	}
 
 	response, ok := respBody["response"].(map[string]interface{})
 	if !ok {
-		return false, fmt.Errorf("unexpected heartbeat response format")
+		return fmt.Errorf("login failed: unexpected response format")
 	}
 
-	heartbeat, ok := response["heartbeat"].(map[string]interface{})
+	success, _ := response["success"].(bool)
+	if !success {
+		return fmt.Errorf("login failed: invalid credentials")
+	}
+
+	eventDefault, ok := response["eventdefault"].(map[string]interface{})
 	if !ok {
-		log.Printf("[asimut] heartbeat missing 'heartbeat' key, response keys: %v", response)
-		return false, fmt.Errorf("unexpected heartbeat format")
+		return fmt.Errorf("login failed: no eventdefault in response")
 	}
 
-	loggedIn, ok := heartbeat["loggedin"].(bool)
+	events, ok := eventDefault["events"].([]interface{})
+	if !ok || len(events) == 0 {
+		return fmt.Errorf("login failed: no events in eventdefault")
+	}
+
+	event, ok := events[0].(map[string]interface{})
 	if !ok {
-		log.Printf("[asimut] heartbeat 'loggedin' not a bool: %v (type %T)", heartbeat["loggedin"], heartbeat["loggedin"])
-		return false, nil
+		return fmt.Errorf("login failed: unexpected event format")
 	}
 
-	if loggedIn {
-		if me, ok := heartbeat["me"].(map[string]interface{}); ok {
+	// Extract user info from participants
+	if pe, ok := event["pe"].([]interface{}); ok && len(pe) > 0 {
+		if participant, ok := pe[0].(map[string]interface{}); ok {
+			userID := intFromInterface(participant["id"])
+			if userID == 0 {
+				return fmt.Errorf("login failed: no user ID in response")
+			}
+			// Parse display name: "Teiln: Klara Gehrig ([BM]Ob956)"
+			dn := stringFromInterface(participant["dn"])
+			name, surname, username := parseParticipantDN(dn)
 			c.userInfo = &UserInfo{
-				ID:             intFromInterface(me["id"]),
-				Name:           stringFromInterface(me["name"]),
-				Surname:        stringFromInterface(me["surname"]),
-				Username:       stringFromInterface(me["username"]),
-				BookingHorizon: stringFromInterface(me["booking_horizon"]),
+				ID:       userID,
+				Name:     name,
+				Surname:  surname,
+				Username: username,
 			}
 			log.Printf("[asimut] user info: id=%d, name=%s %s", c.userInfo.ID, c.userInfo.Name, c.userInfo.Surname)
 		}
 	}
 
-	log.Printf("[asimut] heartbeat loggedin=%v", loggedIn)
-	return loggedIn, nil
+	if c.userInfo == nil || c.userInfo.ID == 0 {
+		return fmt.Errorf("login failed: could not extract user info")
+	}
+
+	return nil
+}
+
+// parseParticipantDN extracts name, surname, and username from a display name
+// like "Teiln: Klara Gehrig ([BM]Ob956)".
+func parseParticipantDN(dn string) (name, surname, username string) {
+	// Strip role prefix (e.g., "Teiln: ")
+	if idx := strings.Index(dn, ": "); idx >= 0 {
+		dn = dn[idx+2:]
+	}
+	// Extract username from parentheses at end
+	if idx := strings.LastIndex(dn, " ("); idx >= 0 {
+		username = strings.TrimSuffix(dn[idx+2:], ")")
+		dn = dn[:idx]
+	}
+	// Split remaining into first/last name
+	parts := strings.SplitN(dn, " ", 2)
+	if len(parts) >= 1 {
+		name = parts[0]
+	}
+	if len(parts) >= 2 {
+		surname = parts[1]
+	}
+	return
 }
 
 // doJSON makes an HTTP request and returns the parsed JSON response.

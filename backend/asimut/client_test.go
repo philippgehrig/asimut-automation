@@ -12,18 +12,25 @@ func TestLogin_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/public/login.php":
-			// Set a session cookie and return 302
 			http.SetCookie(w, &http.Cookie{
 				Name:  "PHPSESSID",
 				Value: "test-session-id",
 			})
 			w.WriteHeader(http.StatusFound)
-		case "/services/v2/heartbeat/me":
+		case "/services/v2/eventdefault":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"response": map[string]interface{}{
-					"heartbeat": map[string]interface{}{"loggedin": true},
-					"success":   true,
+					"eventdefault": map[string]interface{}{
+						"events": []interface{}{
+							map[string]interface{}{
+								"pe": []interface{}{
+									map[string]interface{}{"id": 965, "ro": 1, "dn": "Teiln: Test User ([BM]Ob956)"},
+								},
+							},
+						},
+					},
+					"success": true,
 				},
 			})
 		default:
@@ -49,12 +56,11 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 		switch r.URL.Path {
 		case "/public/login.php":
 			w.WriteHeader(http.StatusFound)
-		case "/services/v2/heartbeat/me":
+		case "/services/v2/eventdefault":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"response": map[string]interface{}{
-					"heartbeat": map[string]interface{}{"loggedin": false},
-					"success":   true,
+					"success": false,
 				},
 			})
 		default:
@@ -87,12 +93,20 @@ func TestLogin_SessionExpired_RetriesWithFreshJar(t *testing.T) {
 				Value: "new-session-id",
 			})
 			w.WriteHeader(http.StatusFound)
-		case "/services/v2/heartbeat/me":
+		case "/services/v2/eventdefault":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"response": map[string]interface{}{
-					"heartbeat": map[string]interface{}{"loggedin": true},
-					"success":   true,
+					"eventdefault": map[string]interface{}{
+						"events": []interface{}{
+							map[string]interface{}{
+								"pe": []interface{}{
+									map[string]interface{}{"id": 965, "ro": 1, "dn": "Teiln: Test User ([BM]Ob956)"},
+								},
+							},
+						},
+					},
+					"success": true,
 				},
 			})
 		default:
@@ -125,7 +139,7 @@ func TestLogin_SessionExpired_RetriesWithFreshJar(t *testing.T) {
 }
 
 func TestLogin_FirstAttemptFails_RetrySucceeds(t *testing.T) {
-	heartbeatCalls := 0
+	eventdefaultCalls := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -135,17 +149,32 @@ func TestLogin_FirstAttemptFails_RetrySucceeds(t *testing.T) {
 				Value: "session-id",
 			})
 			w.WriteHeader(http.StatusFound)
-		case "/services/v2/heartbeat/me":
-			heartbeatCalls++
+		case "/services/v2/eventdefault":
+			eventdefaultCalls++
 			w.Header().Set("Content-Type", "application/json")
-			// First heartbeat call fails (simulates stale session), second succeeds
-			loggedIn := heartbeatCalls > 1
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"response": map[string]interface{}{
-					"heartbeat": map[string]interface{}{"loggedin": loggedIn},
-					"success":   true,
-				},
-			})
+			// First call fails (simulates stale session), second succeeds
+			if eventdefaultCalls > 1 {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"response": map[string]interface{}{
+						"eventdefault": map[string]interface{}{
+							"events": []interface{}{
+								map[string]interface{}{
+									"pe": []interface{}{
+										map[string]interface{}{"id": 965, "ro": 1, "dn": "Teiln: Test User ([BM]Ob956)"},
+									},
+								},
+							},
+						},
+						"success": true,
+					},
+				})
+			} else {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"response": map[string]interface{}{
+						"success": false,
+					},
+				})
+			}
 		default:
 			t.Errorf("unexpected request to %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -156,20 +185,21 @@ func TestLogin_FirstAttemptFails_RetrySucceeds(t *testing.T) {
 	client := NewClient(server.URL, "test@example.com", "password123")
 	err := client.Login()
 	if err != nil {
-		t.Fatalf("Login() returned error: %v (heartbeat calls: %d)", err, heartbeatCalls)
+		t.Fatalf("Login() returned error: %v (eventdefault calls: %d)", err, eventdefaultCalls)
 	}
 
 	if !client.LoggedIn() {
 		t.Error("expected LoggedIn() to return true after retry succeeded")
 	}
 
-	if heartbeatCalls < 2 {
-		t.Errorf("expected at least 2 heartbeat calls (retry), got %d", heartbeatCalls)
+	if eventdefaultCalls < 2 {
+		t.Errorf("expected at least 2 eventdefault calls (retry), got %d", eventdefaultCalls)
 	}
 }
 
 func TestBookRoom_Success(t *testing.T) {
 	expectedEventID := 12345
+	loginDone := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -182,11 +212,20 @@ func TestBookRoom_Success(t *testing.T) {
 			})
 			w.WriteHeader(http.StatusFound)
 
-		case r.URL.Path == "/services/v2/heartbeat/me":
+		case r.URL.Path == "/services/v2/eventdefault" && r.Method == "POST" && !loginDone:
+			loginDone = true
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"response": map[string]interface{}{
-					"heartbeat": map[string]interface{}{"loggedin": true},
-					"success":   true,
+					"eventdefault": map[string]interface{}{
+						"events": []interface{}{
+							map[string]interface{}{
+								"pe": []interface{}{
+									map[string]interface{}{"id": 965, "ro": 1, "dn": "Teiln: Test User ([BM]Ob956)"},
+								},
+							},
+						},
+					},
+					"success": true,
 				},
 			})
 
