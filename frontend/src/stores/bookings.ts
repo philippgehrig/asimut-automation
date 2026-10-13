@@ -18,6 +18,15 @@ export interface BookingWish {
   updated_at: string
 }
 
+export interface ExecLogEntry {
+  id: number
+  booking_id: string
+  timestamp: string
+  step: string
+  message: string
+  detail?: string
+}
+
 export const useBookingsStore = defineStore('bookings', () => {
   const bookings = ref<BookingWish[]>([])
   const loading = ref(false)

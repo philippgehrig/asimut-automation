@@ -1,4 +1,4 @@
-import type { BookingWish } from './stores/bookings'
+import type { BookingWish, ExecLogEntry } from './stores/bookings'
 import type { RecurringSchedule } from './stores/recurrences'
 import type { Room } from './stores/rooms'
 import { useAuthStore } from './stores/auth'
@@ -33,6 +33,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   getBookings: () => request<BookingWish[]>('/bookings'),
   createBooking: (data: Partial<BookingWish>) => request<{ id: string }>('/bookings', { method: 'POST', body: JSON.stringify(data) }),
+  getBookingLog: (id: string) => request<ExecLogEntry[]>(`/bookings/${id}/log`),
   deleteBooking: (id: string) => request<void>(`/bookings/${id}`, { method: 'DELETE' }),
   getRecurrences: () => request<RecurringSchedule[]>('/recurrences'),
   createRecurrence: (data: Partial<RecurringSchedule>) => request<{ id: string }>('/recurrences', { method: 'POST', body: JSON.stringify(data) }),

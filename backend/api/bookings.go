@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/philippgehrig/asimuth-automation/backend/asimut"
 	"github.com/philippgehrig/asimuth-automation/backend/db"
 	"github.com/philippgehrig/asimuth-automation/backend/scheduler"
 )
@@ -136,6 +137,25 @@ func isTimingError(errMsg string) bool {
 		strings.Contains(lower, "bestatigt werden")
 }
 
+// roomFailure records why a single room could not be booked.
+type roomFailure struct {
+	id   int
+	name string
+	err  error
+}
+
+// anyTimingError reports whether any room failed because the booking was attempted
+// too early. Checking only the last room would miss a timing error on a higher-priority
+// room that is followed by a different failure (e.g. an overlap) on a lower one.
+func anyTimingError(failures []roomFailure) bool {
+	for _, f := range failures {
+		if f.err != nil && isTimingError(f.err.Error()) {
+			return true
+		}
+	}
+	return false
+}
+
 // executeBooking logs into Asimut and attempts to book a room from the priority list.
 func (s *Server) executeBooking(id string, wish db.BookingWish) {
 	log.Printf("booking %s: === EXECUTION START === date=%s start=%s duration=%dmin rooms=%v",
@@ -181,12 +201,17 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 
 	log.Printf("booking %s: attempting initial booking: %s to %s (30min)",
 		id, start.Format("2006-01-02 15:04"), end.Format("15:04"))
+	windowOpens := start.Add(-48*time.Hour + 30*time.Minute)
 	s.db.LogExec(id, "book_attempt", fmt.Sprintf("attempting booking: %s to %s",
-		start.Format("2006-01-02 15:04"), end.Format("15:04")), "")
+		start.Format("2006-01-02 15:04"), end.Format("15:04")),
+		fmt.Sprintf("booking window opened at %s, first attempt at %s (delay %v)",
+			windowOpens.Format("15:04:05"), time.Now().In(loc).Format("15:04:05.000"),
+			time.Since(windowOpens).Round(time.Millisecond)))
 
 	var bookedRoom string
 	var eventID int
 	var lastErr error
+	var failures []roomFailure
 
 	// Retry loop: if we get a timing error (too early for confirmation window),
 	// wait and retry up to 6 times (5 min intervals = 30 min total coverage).
@@ -214,6 +239,7 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 		bookedRoom = ""
 		eventID = 0
 		lastErr = nil
+		failures = nil
 
 		for _, roomID := range wish.RoomPriorities {
 			roomName := s.resolveRoomName(roomID)
@@ -231,29 +257,50 @@ func (s *Server) executeBooking(id string, wish db.BookingWish) {
 			}
 			lastErr = err
 			log.Printf("booking %s: room %d failed: %v", id, roomID, err)
+			failures = append(failures, roomFailure{roomID, roomName, err})
+			// No network calls here: the next room must be tried as fast as possible.
 			s.db.LogExec(id, "room_failed", fmt.Sprintf("room %d (%s) failed", roomID, roomName),
-				fmt.Sprintf("%v", err))
+				strings.Join(issueLines(err), "\n"))
 		}
 
 		if bookedRoom != "" {
 			break
 		}
 
-		// If last error is a timing error, retry; otherwise give up
-		if lastErr != nil && isTimingError(lastErr.Error()) && attempt < maxTimingRetries {
+		// If any room failed with a timing error, retry; otherwise give up
+		if anyTimingError(failures) && attempt < maxTimingRetries {
 			continue
 		}
 		break
 	}
 
 	if bookedRoom == "" {
+		// Now that the race is over, look up what is actually occupying the rooms.
+		var roomSummaries []string
+		blockedRooms := map[int][]asimut.AsimutEventInfo{}
+		for _, f := range failures {
+			summary, detail, blockers := s.diagnoseRoomFailure(f.id, f.name, start, end, f.err)
+			roomSummaries = append(roomSummaries, summary)
+			s.db.LogExec(id, "room_diagnosis", fmt.Sprintf("%s: %s", f.name, summary), detail)
+			if len(blockers) > 0 {
+				blockedRooms[f.id] = blockers
+			}
+		}
+
 		reason := "no room available"
-		if lastErr != nil {
+		if len(roomSummaries) > 0 {
+			reason = "no room available — " + strings.Join(roomSummaries, "; ")
+		} else if lastErr != nil {
 			reason = fmt.Sprintf("no room available: %v", lastErr)
 		}
 		log.Printf("booking %s: === FAILED === %s", id, reason)
 		s.db.LogExec(id, "failed", reason, "")
 		_ = s.db.UpdateBookingStatus(id, "failed", "", nil, nil, reason)
+		if len(blockedRooms) > 0 {
+			s.db.LogExec(id, "blocker_followup_scheduled",
+				fmt.Sprintf("will re-check blocking bookings in %v to see if they are being extended", blockerFollowUpDelay), "")
+			go s.followUpBlockers(id, start, end, blockedRooms)
+		}
 		return
 	}
 

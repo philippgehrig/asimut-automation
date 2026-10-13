@@ -245,18 +245,13 @@ func (c *Client) BookRoom(roomID int, start, end time.Time) (*BookingResult, err
 
 	if checkResponse, ok := checkResp["response"].(map[string]interface{}); ok {
 		if success, _ := checkResponse["success"].(bool); !success {
+			issues := parseBookingIssues(checkResponse)
 			msg := "booking check failed"
-			if br, ok := checkResponse["bookingrules"].(map[string]interface{}); ok {
-				if issues, ok := br["issues"].([]interface{}); ok && len(issues) > 0 {
-					if issue, ok := issues[0].(map[string]interface{}); ok {
-						if text, ok := issue["text"].(string); ok {
-							msg = text
-						}
-					}
-				}
+			if len(issues) > 0 {
+				msg = issues[0].Text
 			}
 			log.Printf("[asimut] book: check rejected: %s", msg)
-			return nil, fmt.Errorf("%s", msg)
+			return nil, &BookingError{Stage: "check", Msg: msg, Issues: issues}
 		}
 		log.Printf("[asimut] book: check passed for room %d", roomID)
 	}
@@ -276,18 +271,13 @@ func (c *Client) BookRoom(roomID int, start, end time.Time) (*BookingResult, err
 
 	success, _ := response["success"].(bool)
 	if !success {
+		issues := parseBookingIssues(response)
 		msg := "booking rejected by server"
-		if br, ok := response["bookingrules"].(map[string]interface{}); ok {
-			if issues, ok := br["issues"].([]interface{}); ok && len(issues) > 0 {
-				if issue, ok := issues[0].(map[string]interface{}); ok {
-					if text, ok := issue["text"].(string); ok {
-						msg = text
-					}
-				}
-			}
+		if len(issues) > 0 {
+			msg = issues[0].Text
 		}
 		log.Printf("[asimut] book: save rejected: %s", msg)
-		return nil, fmt.Errorf("%s", msg)
+		return nil, &BookingError{Stage: "save", Msg: msg, Issues: issues}
 	}
 
 	eventIDs, ok := response["event_ids"].([]interface{})
@@ -483,50 +473,7 @@ func (c *Client) GetMyEvents(from, to time.Time) ([]AsimutEventInfo, error) {
 		return nil, fmt.Errorf("no agenda map in response (keys: %v)", keys(response))
 	}
 
-	var events []AsimutEventInfo
-	for _, dayGroups := range agendaMap {
-		groups, ok := dayGroups.([]interface{})
-		if !ok {
-			continue
-		}
-		for _, g := range groups {
-			group, ok := g.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			eventsRaw, ok := group["events"].([]interface{})
-			if !ok {
-				continue
-			}
-			for _, er := range eventsRaw {
-				em, ok := er.(map[string]interface{})
-				if !ok {
-					continue
-				}
-
-				roomName := ""
-				if rs, ok := em["rs"].([]interface{}); ok && len(rs) > 0 {
-					if rm, ok := rs[0].(map[string]interface{}); ok {
-						roomName = stringFromInterface(rm["dn"])
-						if name := stringFromInterface(rm["name"]); name != "" {
-							roomName = name
-						}
-						if idx := strings.Index(roomName, " ("); idx > 0 {
-							roomName = roomName[:idx]
-						}
-					}
-				}
-
-				events = append(events, AsimutEventInfo{
-					ID:        intFromInterface(em["id"]),
-					Title:     stringFromInterface(em["ar"]),
-					RoomName:  roomName,
-					StartTime: stringFromInterface(em["st"]),
-					EndTime:   stringFromInterface(em["en"]),
-				})
-			}
-		}
-	}
+	events := parseAgendaEvents(agendaMap)
 
 	log.Printf("[asimut] parsed %d events from agenda", len(events))
 	return events, nil
